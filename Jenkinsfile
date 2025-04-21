@@ -1,43 +1,52 @@
 
 pipeline {
-    agent {
-    label 'Agent-1'
-    }
+    agent any
     options {
         timeout(time: 30, unit: 'MINUTES')
         disableConcurrentBuilds()
     }
+    parameters {
+        booleanParam(name: 'autoApprove', defaultValue: true, description: 'Automatically run apply after generating plan?')
+    }
     environment{
-        DEPLOYE_TO = 'production'
-        GREETINGS = 'Good Morning'
+        AWS_ACCESS_KEY_ID = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
     }
     stages {
-        stage('Init') {
+        stage('checkout') {
             steps {
-                sh """
-                ls -ltr
-                """
+                script {
+                    dir("terraform")
+                    {
+                        git "https://github.com/Shivani-Indla/Jenkins-Python-Repo.git"
+                    }
+                }
             }
         }
-        stage('Test') {
+        stage('Plan') {
             steps {
-                sh 'echo Hi this is shiva Deploy in Agent-1'
+                sh 'pwd; cd terraform/; terraform init'
+                sh 'pwd; cd terraform/; terraform plan -out tfplan'
+                sh 'pwd; cd terraform/; terraform show -no-colour tfplan > tfplan.txt'
             }
         }
-        stage('Deploy') {
-            steps {
-                sh 'echo Hi this is shiva Deploy in Agent-1'
+        stage('Approval') {
+            when {
+                not {
+                    equals expected: true, actual: params.autoApprove
+                }
             }
-            post{
-                always{
-                    echo 'I will always say hello again'
+            steps {
+                script {
+                    def plan = readFile 'terraform/tfplan.txt'
+                    input message: "Do you want to apply the plan?"
+                    parameters: [text(name: 'plan', defaultValue: plan, description: 'Please review the Plan')]
                 }
-                success{
-                    echo 'I will run when pipeline is success'
-                }
-                failure{
-                    echo 'I will run when pipeline is failure'
-                }
+            }
+        }
+        stage('Apply') {
+            steps {
+                sh 'pwd; cd terraform/; terraform apply -input=false tfplan'
             }
         }
     }
